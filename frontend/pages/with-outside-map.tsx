@@ -1,21 +1,23 @@
-import * as React from "react";
-import "mapbox-gl/dist/mapbox-gl.css";
-import MapboxMap from "../components/mapbox-map";
-import mapbox from "../lib/map-wrapper";
+import 'mapbox-gl/dist/mapbox-gl.css'
+
+import * as React from 'react'
+
+import MapboxMap from '../components/mapbox-map'
+import mapbox from '../lib/map-wrapper'
 
 const WithOutsideMap: React.FC = () => {
   const [viewport, setViewport] = React.useState({
-    center: ["-74.5165", "40.0021"],
+    center: ["105.804817", "21.028511"],
     zoom: "9.00",
-  });
+  })
 
   const {
     center: [lng, lat],
     zoom,
-  } = viewport;
+  } = viewport
 
   const onMapCreated = React.useCallback((map: mapboxgl.Map) => {
-    mapbox.map = map;
+    mapbox.map = map
 
     mapbox.map.on("move", () => {
       setViewport({
@@ -24,9 +26,9 @@ const WithOutsideMap: React.FC = () => {
           mapbox.map.getCenter().lat.toFixed(4),
         ],
         zoom: mapbox.map.getZoom().toFixed(2),
-      });
-    });
-  }, []);
+      })
+    })
+  }, [])
 
   return (
     <div className="app-container">
@@ -40,7 +42,7 @@ const WithOutsideMap: React.FC = () => {
         />
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default WithOutsideMap;
+export default WithOutsideMap

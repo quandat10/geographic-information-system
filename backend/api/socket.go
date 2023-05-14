@@ -29,15 +29,14 @@ func (s *Server) handleWebSocket(c echo.Context) error {
 	}
 	defer conn.Close()
 
-	// Register connection with map room
+	// Register connection with map
 	room := s.getMapRoom()
 	room.registerRoom(conn, username)
 	var msg Message
 
+	// Response list coordinates in the first connection
 	room.broadcastRoom(s)
-	if err != nil {
-		log.Err(err)
-	}
+
 	// Read messages from WebSocket and broadcast to other clients
 	for {
 		_, message, err := conn.ReadMessage()

@@ -1,10 +1,15 @@
 package api
 
 import (
+	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
 	"github.com/rs/zerolog/log"
+)
+
+var (
+	upgrader = websocket.Upgrader{}
 )
 
 type Server struct {
@@ -25,10 +30,14 @@ func (s *Server) setupRouter() {
 	s.router.Use(middleware.Logger())
 	s.router.Use(middleware.Recover())
 	s.router.Use(middleware.Gzip())
+	s.router.Static("/", "../public")
+	s.router.GET("/ws", s.handleWebSocket)
 
 	r := s.router.Group("/api")
-	r.POST("/user", s.NewUser)
-	r.PATCH("/user", s.UpdateUser)
+	r.POST("/users", s.NewUser)
+	r.PATCH("/users", s.UpdateUser)
+	r.GET("/users/:username", s.findUser)
+
 }
 
 func (s *Server) StartServer(address string) error {

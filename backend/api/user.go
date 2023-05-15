@@ -1,7 +1,7 @@
 package api
 
 import (
-	"fmt"
+	"errors"
 	"net/http"
 	"quandat10/htttdl/backend/utils"
 
@@ -11,20 +11,24 @@ import (
 )
 
 type User struct {
-	Username string  `json:"username"`
-	Latitude      float32 `json:"latitude"`
-	Longitude     float32 `json:"longitude"`
-	Radius   int16   `json:"radius"`
-	Status   bool    `json:"status"`
+	Username  string  `json:"username"`
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	Radius    int64   `json:"radius"`
+	Status    bool    `json:"status"`
+}
+
+type Node struct {
+	Id     int64                  `json:"Id"`
+	Labels []string               `json:"Labels"`
+	Props  map[string]interface{} `json:"Props"`
 }
 
 func (s *Server) NewUser(c echo.Context) error {
 	user := User{}
 
-	err := c.Bind(&user)
-	if err != nil {
-		log.Error().Msg(err.Error())
-		return echo.NewHTTPError(http.StatusInternalServerError)
+	if err := c.Bind(&user); err != nil {
+		return c.String(http.StatusBadRequest, "bad request")
 	}
 
 	session := s.store.NewSession(neo4j.SessionConfig{
@@ -32,12 +36,12 @@ func (s *Server) NewUser(c echo.Context) error {
 	})
 
 	defer func() {
-		err = session.Close()
+		session.Close()
 	}()
 
 	// Check User Exist
-	_, err = session.ReadTransaction(func(tx neo4j.Transaction) (interface{}, error) {
-		return getUser(tx, user.Username)
+	_, err := session.ReadTransaction(func(tx neo4j.Transaction) (interface{}, error) {
+		return s.getUser(tx, user.Username)
 	})
 	if err != nil {
 		if err.Error() == "Result contains more than one record" {
@@ -57,11 +61,11 @@ func (s *Server) NewUser(c echo.Context) error {
 	if _, err := session.WriteTransaction(func(tx neo4j.Transaction) (interface{}, error) {
 		query := "CREATE (:User {username: $username, longitude: $longitude, latitude: $latitude,radius: $radius,status: $status})"
 		parameters := map[string]interface{}{
-			"username": user.Username,
-			"longitude":     user.Longitude,
-			"latitude":      user.Latitude,
-			"radius":   user.Radius,
-			"status":   true,
+			"username":  user.Username,
+			"longitude": user.Longitude,
+			"latitude":  user.Latitude,
+			"radius":    user.Radius,
+			"status":    true,
 		}
 		_, err = tx.Run(query, parameters)
 		return nil, err
@@ -81,26 +85,60 @@ func (s *Server) NewUser(c echo.Context) error {
 
 func (s *Server) UpdateUser(c echo.Context) error {
 	user := User{}
-
 	err := c.Bind(&user)
 	if err != nil {
 		log.Error().Msg(err.Error())
 		return echo.NewHTTPError(http.StatusInternalServerError)
 	}
 
+	err = s.updateStore(user)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, &utils.ErrorMsg{
+			Message: err.Error(),
+		})
+	}
+
+	return c.JSON(http.StatusCreated, &utils.ResponseMsg{
+		Status: "Update success",
+		Data:   user,
+	})
+}
+
+func (s *Server) findUser(c echo.Context) error {
+	userName := c.Param("username")
 	session := s.store.NewSession(neo4j.SessionConfig{
 		AccessMode: neo4j.AccessModeWrite,
 	})
 
-	// Check User Exist
 	userData, err := session.ReadTransaction(func(tx neo4j.Transaction) (interface{}, error) {
-		return getUser(tx, user.Username)
+		return s.getUser(tx, userName)
 	})
 	if err != nil {
 		if err.Error() == "Result contains no more records" {
 			return c.JSON(http.StatusConflict, &utils.ErrorMsg{
 				Message: "User does not exist",
 			})
+		}
+	}
+
+	return c.JSON(http.StatusOK, &utils.ResponseMsg{
+		Status: "success",
+		Data:   userData,
+	})
+}
+
+func (s *Server) updateStore(user User) error {
+	session := s.store.NewSession(neo4j.SessionConfig{
+		AccessMode: neo4j.AccessModeWrite,
+	})
+
+	// Check User Exist
+	userData, err := session.ReadTransaction(func(tx neo4j.Transaction) (interface{}, error) {
+		return s.getUser(tx, user.Username)
+	})
+	if err != nil {
+		if err.Error() == "Result contains no more records" {
+			return errors.New("User does not exist")
 		}
 	}
 	//Modify User
@@ -120,11 +158,11 @@ func (s *Server) UpdateUser(c echo.Context) error {
 	if _, err := session.WriteTransaction(func(tx neo4j.Transaction) (interface{}, error) {
 		query := "MATCH (u:User {username: $username}) SET u.status=$status,u.longitude=$longitude,u.latitude=$latitude,u.radius=$radius RETURN u"
 		parameters := map[string]interface{}{
-			"username": user.Username,
-			"longitude":     user.Longitude,
-			"latitude":      user.Latitude,
-			"radius":   user.Radius,
-			"status":   user.Status,
+			"username":  user.Username,
+			"longitude": user.Longitude,
+			"latitude":  user.Latitude,
+			"radius":    user.Radius,
+			"status":    user.Status,
 		}
 		_, err = tx.Run(query, parameters)
 		return nil, err
@@ -132,13 +170,10 @@ func (s *Server) UpdateUser(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(http.StatusCreated, &utils.ResponseMsg{
-		Status: "Update success",
-		Data:   user,
-	})
+	return nil
 }
 
-func getUser(tx neo4j.Transaction, username string) (User, error) {
+func (s *Server) getUser(tx neo4j.Transaction, username string) (User, error) {
 	result, err := tx.Run(
 		"MATCH (u:User {username: $username}) RETURN"+
 			" u.username AS username, u.latitude AS latitude, "+
@@ -156,17 +191,16 @@ func getUser(tx neo4j.Transaction, username string) (User, error) {
 		log.Error().Msg(err.Error())
 		return User{}, err
 	}
-	fmt.Println("record", record)
 	name, _ := record.Get("username")
 	latitude, _ := record.Get("latitude")
 	longitude, _ := record.Get("longitude")
 	radius, _ := record.Get("radius")
 
 	user := User{
-		Username: name.(string),
-		Latitude:      float32(latitude.(float64)),
-		Longitude:     float32(longitude.(float64)),
-		Radius:   int16(radius.(int64)),
+		Username:  name.(string),
+		Latitude:  latitude.(float64),
+		Longitude: longitude.(float64),
+		Radius:    radius.(int64),
 	}
 
 	return user, nil

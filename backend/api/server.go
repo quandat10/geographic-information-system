@@ -36,7 +36,7 @@ func (s *Server) setupRouter() {
 	r := s.router.Group("/api")
 	r.POST("/users", s.NewUser)
 	r.PATCH("/users", s.UpdateUser)
-	r.GET("/users/:radius", s.findUser)
+	r.GET("/users", s.findUser)
 
 }
 

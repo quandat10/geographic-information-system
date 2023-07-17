@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"quandat10/htttdl/backend/utils"
+	"strconv"
 
 	"github.com/labstack/echo"
 	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
@@ -11,11 +12,12 @@ import (
 )
 
 type User struct {
-	Username  string  `json:"username"`
+	Name      string  `json:"name"`
 	Latitude  float64 `json:"latitude"`
 	Longitude float64 `json:"longitude"`
 	Radius    int64   `json:"radius"`
 	Status    bool    `json:"status"`
+	Distance  float64 `json:"distance"`
 }
 
 type Node struct {
@@ -41,7 +43,7 @@ func (s *Server) NewUser(c echo.Context) error {
 
 	// Check User Exist
 	_, err := session.ReadTransaction(func(tx neo4j.Transaction) (interface{}, error) {
-		return s.getUser(tx, user.Username)
+		return s.getUser(tx, user.Name)
 	})
 	if err != nil {
 		if err.Error() == "Result contains more than one record" {
@@ -59,9 +61,9 @@ func (s *Server) NewUser(c echo.Context) error {
 
 	// Create user
 	if _, err := session.WriteTransaction(func(tx neo4j.Transaction) (interface{}, error) {
-		query := "CREATE (:User {username: $username, longitude: $longitude, latitude: $latitude,radius: $radius,status: $status})"
+		query := "CREATE (:User {name: $name, longitude: $longitude, latitude: $latitude,radius: $radius,status: $status})"
 		parameters := map[string]interface{}{
-			"username":  user.Username,
+			"name":      user.Name,
 			"longitude": user.Longitude,
 			"latitude":  user.Latitude,
 			"radius":    user.Radius,
@@ -105,21 +107,34 @@ func (s *Server) UpdateUser(c echo.Context) error {
 }
 
 func (s *Server) findUser(c echo.Context) error {
-	radius := c.Param("radius")
+	radiusParam := c.QueryParam("radius")
+	nameParam := c.QueryParam("name")
+
 	session := s.store.NewSession(neo4j.SessionConfig{
 		AccessMode: neo4j.AccessModeWrite,
 	})
 
 	query := `
-    MATCH (u:User)
-    WHERE apoc.spatial.distance(u, {latitude: $latitude, longitude: $longitude}) <= $radius
-    RETURN u.username AS username, u.latitude AS latitude, u.longitude AS longitude
-  `
-	params := map[string]interface{}{
-		"latitude":  10.0,
-		"longitude": 20.0,
-		"radius":    radius,
+		MATCH (a:User {name: $name})-[r:LOCATED_AT]->(aLoc:Location)
+		WITH point({latitude: aLoc.latitude, longitude: aLoc.longitude}) AS aPoint
+		MATCH (b:User)-[s:LOCATED_AT]->(bLoc:Location)
+		WITH b, point({latitude: bLoc.latitude, longitude: bLoc.longitude}) AS bPoint, aPoint, bLoc
+		WITH b, bLoc, distance(aPoint, bPoint) AS distance
+		WHERE distance < $radius // 10km in meters
+		RETURN b.name AS name, bLoc.latitude AS latitude, bLoc.longitude AS longitude, distance
+		ORDER BY distance
+	`
+
+	radius, err := strconv.ParseInt(radiusParam, 10, 16)
+	if err != nil {
+		return errors.New(err.Error())
 	}
+
+	params := map[string]interface{}{
+		"name":   nameParam,
+		"radius": int16(radius),
+	}
+
 	result, err := session.Run(query, params)
 	if err != nil {
 		return errors.New(err.Error())
@@ -129,10 +144,14 @@ func (s *Server) findUser(c echo.Context) error {
 	var users []User
 	for result.Next() {
 		record := result.Record()
+
+		userDistance := record.Values
+
 		user := User{
-			Username:  record.GetByIndex(0).(string),
-			Latitude:  record.GetByIndex(1).(float64),
-			Longitude: record.GetByIndex(2).(float64),
+			Name:      userDistance[0].(string),
+			Latitude:  userDistance[1].(float64),
+			Longitude: userDistance[2].(float64),
+			Distance:  userDistance[3].(float64),
 		}
 		users = append(users, user)
 	}
@@ -150,7 +169,7 @@ func (s *Server) updateStore(user User) error {
 
 	// Check User Exist
 	userData, err := session.ReadTransaction(func(tx neo4j.Transaction) (interface{}, error) {
-		return s.getUser(tx, user.Username)
+		return s.getUser(tx, user.Name)
 	})
 	if err != nil {
 		if err.Error() == "Result contains no more records" {
@@ -172,9 +191,9 @@ func (s *Server) updateStore(user User) error {
 
 	// Update User
 	if _, err := session.WriteTransaction(func(tx neo4j.Transaction) (interface{}, error) {
-		query := "MATCH (u:User {username: $username}) SET u.status=$status,u.longitude=$longitude,u.latitude=$latitude,u.radius=$radius RETURN u"
+		query := "MATCH (u:User {name: $name}) SET u.status=$status,u.longitude=$longitude,u.latitude=$latitude,u.radius=$radius RETURN u"
 		parameters := map[string]interface{}{
-			"username":  user.Username,
+			"name":      user.Name,
 			"longitude": user.Longitude,
 			"latitude":  user.Latitude,
 			"radius":    user.Radius,
@@ -189,34 +208,33 @@ func (s *Server) updateStore(user User) error {
 	return nil
 }
 
-func (s *Server) getUser(tx neo4j.Transaction, username string) (User, error) {
+func (s *Server) getUser(tx neo4j.Transaction, name string) (User, error) {
 	result, err := tx.Run(
-		"MATCH (u:User {username: $username}) RETURN"+
-			" u.username AS username, u.latitude AS latitude, "+
-			"u.longitude AS longitude, u.radius AS radius",
+		`MATCH (u:User {name: 'User 1'})-[:LOCATED_AT]->(l:Location)
+		RETURN u.name AS name, l.latitude AS latitude, l.longitude AS longitude`,
 		map[string]interface{}{
-			"username": username,
+			"name": name,
 		},
 	)
 	if err != nil {
 		log.Error().Msg(err.Error())
 		return User{}, err
 	}
+
 	record, err := result.Single()
 	if err != nil {
 		log.Error().Msg(err.Error())
 		return User{}, err
 	}
-	name, _ := record.Get("username")
+
+	username, _ := record.Get("name")
 	latitude, _ := record.Get("latitude")
 	longitude, _ := record.Get("longitude")
-	radius, _ := record.Get("radius")
 
 	user := User{
-		Username:  name.(string),
+		Name:      username.(string),
 		Latitude:  latitude.(float64),
 		Longitude: longitude.(float64),
-		Radius:    radius.(int64),
 	}
 
 	return user, nil

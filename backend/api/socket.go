@@ -2,10 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"quandat10/htttdl/backend/utils"
+	"strconv"
+
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo"
 	"github.com/rs/zerolog/log"
-	"quandat10/htttdl/backend/utils"
 )
 
 type Message struct {
@@ -16,11 +18,18 @@ type Message struct {
 
 type WClient struct {
 	username string
+	radius   int16
 	ws       *websocket.Conn
 }
 
 func (s *Server) handleWebSocket(c echo.Context) error {
 	username := c.QueryParam("username")
+	radiusParam := c.QueryParam("radius")
+
+	radius, err := strconv.ParseInt(radiusParam, 10, 16)
+	if err != nil {
+		return err
+	}
 
 	// Upgrade HTTP connection to WebSocket
 	conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
@@ -31,7 +40,7 @@ func (s *Server) handleWebSocket(c echo.Context) error {
 
 	// Register connection with map
 	room := s.getMapRoom()
-	room.registerRoom(conn, username)
+	room.registerRoom(conn, username, int16(radius))
 	var msg Message
 
 	// Response list coordinates in the first connection
@@ -40,6 +49,7 @@ func (s *Server) handleWebSocket(c echo.Context) error {
 	// Read messages from WebSocket and broadcast to other clients
 	for {
 		_, message, err := conn.ReadMessage()
+
 		if err != nil {
 			room.unregisterRoom(conn, username)
 			return err
@@ -51,7 +61,7 @@ func (s *Server) handleWebSocket(c echo.Context) error {
 		}
 
 		user := User{
-			Username:  msg.Username,
+			Name:      msg.Username,
 			Longitude: msg.Longitude,
 			Latitude:  msg.Latitude,
 		}
@@ -83,9 +93,10 @@ func newMapRoom() *MapRoom {
 }
 
 // Register a new client with the map room
-func (c *MapRoom) registerRoom(conn *websocket.Conn, username string) {
+func (c *MapRoom) registerRoom(conn *websocket.Conn, username string, radius int16) {
 	cl := WClient{
 		username: username,
+		radius:   radius,
 		ws:       conn,
 	}
 	c.clients[cl] = true
@@ -116,9 +127,8 @@ func connCloseChan(conn *websocket.Conn) chan bool {
 func (c *MapRoom) broadcastRoom(s *Server) {
 
 	for conn := range c.clients {
-		users, _ := s.listUsersInsideRadius(conn.username)
+		users, _ := s.listUsersInsideRadius(conn.username, conn.radius)
 		rs := utils.AIToAB(users)
-
 		if err := conn.ws.WriteMessage(websocket.TextMessage, rs); err != nil {
 			c.unregisterRoom(conn.ws, conn.username)
 		}
@@ -141,7 +151,7 @@ func (c *MapRoom) run(s *Server) {
 	for {
 		select {
 		case conn := <-c.register:
-			c.registerRoom(conn.ws, conn.username)
+			c.registerRoom(conn.ws, conn.username, conn.radius)
 		case conn := <-c.unregister:
 			c.unregisterRoom(conn.ws, conn.username)
 		case _ = <-c.broadcast:

@@ -7,7 +7,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func (s *Server) listUsersInsideRadius(username string) ([]interface{}, error) {
+func (s *Server) listUsersInsideRadius(username string, radius int16) ([]interface{}, error) {
 	// create session
 	session := s.store.NewSession(neo4j.SessionConfig{
 		AccessMode: neo4j.AccessModeWrite,
@@ -31,8 +31,16 @@ func (s *Server) listUsersInsideRadius(username string) ([]interface{}, error) {
 	users := make([]interface{}, 0)
 
 	_, err = session.ReadTransaction(func(tx neo4j.Transaction) (interface{}, error) {
-		rs, err := tx.Run(`match (u:User) where u.username<>$username return (u);`, map[string]interface{}{
-			"username": username,
+		rs, err := tx.Run(`MATCH (a:User {name: $name})-[r:LOCATED_AT]->(aLoc:Location)
+		WITH point({latitude: aLoc.latitude, longitude: aLoc.longitude}) AS aPoint
+		MATCH (b:User)-[s:LOCATED_AT]->(bLoc:Location)
+		WITH b, point({latitude: bLoc.latitude, longitude: bLoc.longitude}) AS bPoint, aPoint, bLoc
+		WITH b, bLoc, distance(aPoint, bPoint) AS distance
+		WHERE distance < $radius
+		RETURN b.name AS name, bLoc.latitude AS latitude, bLoc.longitude AS longitude, distance
+		ORDER BY distance`, map[string]interface{}{
+			"name":   username,
+			"radius": radius,
 		})
 		if err != nil {
 			log.Error().Msg(err.Error())
@@ -41,8 +49,16 @@ func (s *Server) listUsersInsideRadius(username string) ([]interface{}, error) {
 
 		for rs.Next() {
 			record := rs.Record()
-			rs := record.Values[0]
-			users = append(users, rs)
+
+			userDistance := record.Values
+
+			user := User{
+				Name:      userDistance[0].(string),
+				Latitude:  userDistance[1].(float64),
+				Longitude: userDistance[2].(float64),
+				Distance:  userDistance[3].(float64),
+			}
+			users = append(users, user)
 		}
 
 		return rs, nil

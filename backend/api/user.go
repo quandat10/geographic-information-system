@@ -105,25 +105,41 @@ func (s *Server) UpdateUser(c echo.Context) error {
 }
 
 func (s *Server) findUser(c echo.Context) error {
-	userName := c.Param("username")
+	radius := c.Param("radius")
 	session := s.store.NewSession(neo4j.SessionConfig{
 		AccessMode: neo4j.AccessModeWrite,
 	})
 
-	userData, err := session.ReadTransaction(func(tx neo4j.Transaction) (interface{}, error) {
-		return s.getUser(tx, userName)
-	})
+	query := `
+    MATCH (u:User)
+    WHERE apoc.spatial.distance(u, {latitude: $latitude, longitude: $longitude}) <= $radius
+    RETURN u.username AS username, u.latitude AS latitude, u.longitude AS longitude
+  `
+	params := map[string]interface{}{
+		"latitude":  10.0,
+		"longitude": 20.0,
+		"radius":    radius,
+	}
+	result, err := session.Run(query, params)
 	if err != nil {
-		if err.Error() == "Result contains no more records" {
-			return c.JSON(http.StatusConflict, &utils.ErrorMsg{
-				Message: "User does not exist",
-			})
+		return errors.New(err.Error())
+	}
+
+	// Parse the query results into a slice of User structs
+	var users []User
+	for result.Next() {
+		record := result.Record()
+		user := User{
+			Username:  record.GetByIndex(0).(string),
+			Latitude:  record.GetByIndex(1).(float64),
+			Longitude: record.GetByIndex(2).(float64),
 		}
+		users = append(users, user)
 	}
 
 	return c.JSON(http.StatusOK, &utils.ResponseMsg{
 		Status: "success",
-		Data:   userData,
+		Data:   users,
 	})
 }
 

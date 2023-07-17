@@ -1,4 +1,26 @@
+# GIS
+## Required
+### Frontend
+```
+Nextjs
+```
+### Backend
+```
+Golang
+```
+### Database
+```
+Neo4j (apoc plugin for spatial indexing)
+```
+## How to Start
+```
+make neo4j
+make server
+make client
+```
 
+
+```
 ## Query samples
 ### Create users
 ```
@@ -37,4 +59,61 @@ WITH aPoint, b, point({latitude: bLoc.latitude, longitude: bLoc.longitude}) AS b
 WITH aPoint, b, distance(aPoint, bPoint) AS distance, bLoc
 WHERE distance < 10000 // 10km in meters
 RETURN b.name AS name, bLoc.latitude AS latitude, bLoc.longitude AS longitude,distance as distance
+```
+
+## Tree Folders
+```
+├── backend
+│   ├── api
+│   │   ├── distance.go
+│   │   ├── server.go
+│   │   ├── socket.go
+│   │   └── user.go
+│   ├── cmd
+│   │   └── main.go
+│   ├── go.mod
+│   ├── go.sum
+│   └── utils
+│       └── helper.go
+├── frontend
+│   ├── components
+│   │   ├── maker-map.tsx
+│   │   ├── mapbox-map.tsx
+│   │   ├── map-loading-holder.tsx
+│   │   ├── modal.tsx
+│   │   ├── Sidebar.tsx
+│   │   └── world-icon.tsx
+│   ├── context
+│   │   └── context.tsx
+│   ├── lib
+│   │   └── map-wrapper.ts
+│   ├── next.config.js
+│   ├── next-env.d.ts
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── pages
+│   │   ├── api
+│   │   │   ├── axios-client.ts
+│   │   │   └── type.ts
+│   │   ├── _app.tsx
+│   │   └── index.tsx
+│   ├── postcss.config.js
+│   ├── public
+│   │   ├── avatar-svgrepo-com.svg
+│   │   ├── favicon.ico
+│   │   ├── hero-image.png
+│   │   ├── map-loading-screen.gif
+│   │   └── vercel.svg
+│   ├── README.md
+│   ├── styles
+│   │   └── globals.css
+│   ├── tailwind.config.js
+│   ├── tsconfig.json
+│   ├── ultis
+│   │   └── popupMap.ts
+│   └── yarn.lock
+├── Makefile
+├── plugins
+│   └── apoc.jar
+└── README.md
 ```

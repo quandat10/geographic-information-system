@@ -19,8 +19,6 @@ make server
 make client
 ```
 
-
-```
 ## Query samples
 ### Create users
 ```

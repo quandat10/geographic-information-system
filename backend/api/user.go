@@ -191,13 +191,13 @@ func (s *Server) updateStore(user User) error {
 
 	// Update User
 	if _, err := session.WriteTransaction(func(tx neo4j.Transaction) (interface{}, error) {
-		query := "MATCH (u:User {name: $name}) SET u.status=$status,u.longitude=$longitude,u.latitude=$latitude,u.radius=$radius RETURN u"
+		query := `MATCH (u:User {name: $name})-[:LOCATED_AT]->(l:Location)
+		SET l.latitude = $latitude, l.longitude = $longitude
+		RETURN u.name AS name, l.latitude AS latitude, l.longitude AS longitude`
 		parameters := map[string]interface{}{
 			"name":      user.Name,
 			"longitude": user.Longitude,
 			"latitude":  user.Latitude,
-			"radius":    user.Radius,
-			"status":    user.Status,
 		}
 		_, err = tx.Run(query, parameters)
 		return nil, err

@@ -11,7 +11,7 @@ import (
 )
 
 type Message struct {
-	Username  string  `json:"username"`
+	Username  string  `json:"name"`
 	Longitude float64 `json:"longitude"`
 	Latitude  float64 `json:"latitude"`
 }
@@ -65,6 +65,7 @@ func (s *Server) handleWebSocket(c echo.Context) error {
 			Longitude: msg.Longitude,
 			Latitude:  msg.Latitude,
 		}
+
 		err = s.updateStore(user)
 		if err != nil {
 			log.Err(err)

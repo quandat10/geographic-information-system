@@ -30,6 +30,10 @@ func (s *Server) setupRouter() {
 	s.router.Use(middleware.Logger())
 	s.router.Use(middleware.Recover())
 	s.router.Use(middleware.Gzip())
+	s.router.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{"http://localhost:3000"},
+		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept},
+	}))
 	s.router.Static("/", "../public")
 	s.router.GET("/ws", s.handleWebSocket)
 

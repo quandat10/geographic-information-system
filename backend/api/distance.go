@@ -20,7 +20,6 @@ func (s *Server) listUsersInsideRadius(username string, radius int16) ([]interfa
 	_, err := session.ReadTransaction(func(tx neo4j.Transaction) (interface{}, error) {
 		return s.getUser(tx, username)
 	})
-	//fmt.Println("userData", userData)
 
 	if err != nil {
 		if err.Error() == "Result contains no more records" {
